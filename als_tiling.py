@@ -21,13 +21,14 @@ import threading
 MANAGED_WORKSPACES = set(range(1, 10))  # workspaces 1-9 (screen 1)
 TEMP_WS = 50                            # staging workspace for rearrangement
 SCRATCHPAD_WS_NUM = -1                  # sway uses -1 for __i3_scratch
-DEBOUNCE_SECS = 0.15                    # wait for burst of events to settle
+DEBOUNCE_SECS = 0.3                     # wait for burst of events to settle
 
 _pending = {}
 _lock = threading.Lock()
-_arranging = 0          # >0 means als_tiling is moving windows itself
-_window_ws = {}         # con_id -> ws_num for every known window
-_floating_windows = set()  # con_ids of known floating windows
+_arranging = 0              # >0 means als_tiling is moving windows itself
+_arrange_sem = threading.Semaphore(1)  # only one arrangement runs at a time
+_window_ws = {}             # con_id -> ws_num for every known window
+_floating_windows = set()   # con_ids of known floating windows
 
 
 def find_workspace(node, name):
@@ -67,6 +68,7 @@ def calc_grid(n):
 
 def arrange_fair(ipc, ws_name, ws_num):
     global _arranging
+    _arrange_sem.acquire()
     with _lock:
         _arranging += 1
     try:
@@ -74,6 +76,7 @@ def arrange_fair(ipc, ws_name, ws_num):
     finally:
         with _lock:
             _arranging -= 1
+        _arrange_sem.release()
 
 
 def _arrange_fair(ipc, ws_name, ws_num):
