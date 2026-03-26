@@ -111,7 +111,10 @@ def _arrange_fair(ipc, ws_name, ws_num):
 
     # Refocus the (now empty) target workspace so subsequent moves land as
     # direct children of its splith — not inside any stale nested container.
+    # Explicitly reset to splith so a previous 'split v' can't leave the
+    # workspace in vertical mode, which would produce a 1×N stack instead of columns.
     ipc.command(f'workspace number {ws_num}')
+    ipc.command('layout splith')
 
     # Pass 1 — pull each column's first window back as a flat row of direct
     # workspace siblings.  No split commands: sway places each window next to
