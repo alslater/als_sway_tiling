@@ -109,17 +109,24 @@ def _arrange_fair(ipc, ws_name, ws_num):
     for wid in win_ids:
         ipc.command(f'[con_id={wid}] move to workspace number {TEMP_WS}')
 
-    # Refocus the (now empty) target workspace so subsequent moves land as
-    # direct children of its splith — not inside any stale nested container.
-    # Explicitly reset to splith so a previous 'split v' can't leave the
-    # workspace in vertical mode, which would produce a 1×N stack instead of columns.
+    # Refocus the (now empty) target workspace.
     ipc.command(f'workspace number {ws_num}')
-    ipc.command('layout splith')
 
-    # Pass 1 — pull each column's first window back as a flat row of direct
-    # workspace siblings.  No split commands: sway places each window next to
-    # the previously focused one at workspace level, building a clean splith row.
-    for col in columns:
+    # Pass 1 — pull each column's first window back as a flat splith row.
+    #
+    # We move the first window, then use 'focus parent' + 'layout splith'
+    # with the window present so the command reliably targets the workspace
+    # container (not some stale empty splitv container that may linger after
+    # previous arrangements).  We then refocus the window so subsequent column
+    # leaders land next to it as siblings at workspace level.
+    first_wid = columns[0][0]
+    ipc.command(f'[con_id={first_wid}] move to workspace number {ws_num}')
+    ipc.command(f'[con_id={first_wid}] focus')
+    ipc.command('focus parent')   # ascend to workspace container
+    ipc.command('layout splith')  # enforce horizontal columns
+    ipc.command(f'[con_id={first_wid}] focus')  # return focus to window
+
+    for col in columns[1:]:
         ipc.command(f'[con_id={col[0]}] move to workspace number {ws_num}')
         ipc.command(f'[con_id={col[0]}] focus')
 
@@ -226,6 +233,7 @@ def on_window(ipc, event):
 
     elif event.change == 'move':
         old_ws_num = _window_ws.get(con_id)
+        was_floating = con_id in _floating_windows
 
         # Find where the window is now
         tree = ipc.get_tree()
@@ -235,28 +243,27 @@ def on_window(ipc, event):
         ws_name, new_ws_num, floating = result
         _window_ws[con_id] = new_ws_num
 
-        # Floating windows (scratchpad, dialogs, etc.) don't occupy tiled space.
-        # Skip rearrangement regardless of where they came from or went to.
         if floating:
             _floating_windows.add(con_id)
-            return
         else:
             _floating_windows.discard(con_id)
 
-        if old_ws_num == new_ws_num:
-            return  # intra-workspace reposition (mod+Shift+hjkl) — ignore
-
-        # Explicit scratchpad guard (in case window is tiled but ws num is -1)
-        if old_ws_num == SCRATCHPAD_WS_NUM or new_ws_num == SCRATCHPAD_WS_NUM:
+        # Intra-workspace tiled reposition (mod+Shift+hjkl) — ignore.
+        if not floating and not was_floating and old_ws_num == new_ws_num:
             return
 
-        if new_ws_num in MANAGED_WORKSPACES:
+        # Rearrange destination if a tiled window arrived on a managed workspace.
+        if not floating and new_ws_num in MANAGED_WORKSPACES:
             schedule_arrange(ipc, ws_name, new_ws_num)
 
-        if old_ws_num in MANAGED_WORKSPACES:
-            ws = find_workspace(tree, str(old_ws_num))
-            if ws:
-                schedule_arrange(ipc, ws.name, old_ws_num)
+        # Rearrange source if a previously-tiled window left a managed workspace.
+        # Covers tiled→tiled cross-workspace moves AND tiled→scratchpad (mod+n):
+        # without this, sending a window to scratchpad left the old layout broken
+        # (e.g. 3-window [A/B|C] collapsing to 1×2 [A/B] after C went to scratchpad).
+        if not was_floating and old_ws_num in MANAGED_WORKSPACES and old_ws_num != new_ws_num:
+            source_ws = find_workspace(tree, str(old_ws_num))
+            if source_ws:
+                schedule_arrange(ipc, source_ws.name, old_ws_num)
 
 
 if __name__ == '__main__':
