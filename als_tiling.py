@@ -17,11 +17,12 @@ Grid layout for N windows:
 import i3ipc
 import math
 import threading
+import time
 
 MANAGED_WORKSPACES = set(range(1, 10))  # workspaces 1-9 (screen 1)
 TEMP_WS = 50                            # staging workspace for rearrangement
 SCRATCHPAD_WS_NUM = -1                  # sway uses -1 for __i3_scratch
-DEBOUNCE_SECS = 0.3                     # wait for burst of events to settle
+DEBOUNCE_SECS = 0.6                     # wait for burst of events to settle
 
 _pending = {}
 _lock = threading.Lock()
@@ -106,8 +107,15 @@ def _arrange_fair(ipc, ws_name, ws_num):
 
     # Move ALL windows to staging to completely clear the workspace.
     # This removes any leftover intermediate containers from prior arrangements.
+    # Small per-move sleep prevents flooding Ghostty (single-instance mode) with
+    # simultaneous configure events across all its windows at once.
     for wid in win_ids:
         ipc.command(f'[con_id={wid}] move to workspace number {TEMP_WS}')
+        time.sleep(0.05)
+
+    # Pause so Wayland clients can process the workspace-change events before
+    # receiving new geometry from the pull-back moves.
+    time.sleep(0.1)
 
     # Refocus the (now empty) target workspace.
     ipc.command(f'workspace number {ws_num}')
