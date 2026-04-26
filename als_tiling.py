@@ -17,7 +17,6 @@ Grid layout for N windows:
 import i3ipc
 import math
 import threading
-import time
 
 MANAGED_WORKSPACES = set(range(1, 10))  # workspaces 1-9 (screen 1)
 TEMP_WS = 50                            # staging workspace for rearrangement
@@ -107,18 +106,21 @@ def _arrange_fair(ipc, ws_name, ws_num):
 
     # Move ALL windows to staging to completely clear the workspace.
     # This removes any leftover intermediate containers from prior arrangements.
-    # Small per-move sleep prevents flooding Ghostty (single-instance mode) with
-    # simultaneous configure events across all its windows at once.
     for wid in win_ids:
         ipc.command(f'[con_id={wid}] move to workspace number {TEMP_WS}')
-        time.sleep(0.05)
-
-    # Pause so Wayland clients can process the workspace-change events before
-    # receiving new geometry from the pull-back moves.
-    time.sleep(0.1)
 
     # Refocus the (now empty) target workspace.
     ipc.command(f'workspace number {ws_num}')
+
+    # Re-check what is actually on staging — an external script (e.g. restart-chrome.py)
+    # may have moved some windows away while we were staging.  Only tile what remains.
+    tree = ipc.get_tree()
+    temp_node = find_workspace(tree, str(TEMP_WS))
+    staged = {w.id for w in get_leaves(temp_node)} if temp_node else set()
+    columns = [[wid for wid in col if wid in staged] for col in columns]
+    columns = [col for col in columns if col]
+    if not columns:
+        return
 
     # Pass 1 — pull each column's first window back as a flat splith row.
     #

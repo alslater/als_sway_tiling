@@ -52,12 +52,16 @@ def parse_config(path):
                            urgency='critical')
                     continue
                 workspace, cmd = parts
-                if workspace.lower() not in ('scratchpad',) and not workspace.isdigit():
+                ws = workspace.lower()
+                # Normalise pwa:<N> → <N> (the pwa: prefix is used by restart-chrome.py)
+                if ws.startswith('pwa:'):
+                    ws = ws[4:]
+                if ws not in ('scratchpad',) and not ws.isdigit():
                     notify('sway_startup: bad workspace',
                            f'Line {lineno}: unknown workspace {workspace!r}',
                            urgency='critical')
                     continue
-                entries.append((workspace.lower(), cmd))
+                entries.append((ws, cmd))
     except FileNotFoundError:
         notify('sway_startup: config not found', path, urgency='critical')
         sys.exit(1)
