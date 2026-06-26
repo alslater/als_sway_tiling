@@ -29,6 +29,7 @@ _arranging = 0              # >0 means als_tiling is moving windows itself
 _arrange_sem = threading.Semaphore(1)  # only one arrangement runs at a time
 _window_ws = {}             # con_id -> ws_num for every known window
 _floating_windows = set()   # con_ids of known floating windows
+_last_count = {}            # ws_name -> window count at last arrangement
 
 
 def find_workspace(node, name):
@@ -93,6 +94,13 @@ def _arrange_fair(ipc, ws_name, ws_num):
 
     wins = get_leaves(ws)
     n = len(wins)
+
+    # Skip rebuild if count is unchanged — a transient window that opened and
+    # closed within the debounce window leaves the layout exactly as it was.
+    prev_count = _last_count.get(ws_name, -1)
+    _last_count[ws_name] = n
+    if n == prev_count:
+        return
 
     if n <= 1:
         return
