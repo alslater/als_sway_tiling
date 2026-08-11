@@ -42,10 +42,24 @@ def find_workspace(node, name):
     return None
 
 
+def is_transient(node):
+    """True for short-lived surfaces that must never take part in tiling.
+
+    Chromium/Edge map a tooltip (e.g. hovering an Outlook calendar entry) as a
+    non-floating xdg_shell con with an empty app_id and no title, alive for only
+    ~20ms.  Counting it inflates the window count, so the grid is rebuilt for
+    N+1 windows and then again for N — a visible layout flicker.
+
+    Only app_id == '' is treated as transient: XWayland windows report None and
+    real Wayland windows always carry a non-empty app_id, so neither is caught.
+    """
+    return node.app_id == '' and not node.name
+
+
 def get_leaves(node):
     """Return all non-floating tiled leaf windows."""
     if not node.nodes:
-        if node.type == 'con' and node.id:
+        if node.type == 'con' and node.id and not is_transient(node):
             return [node]
         return []
     leaves = []
@@ -223,6 +237,11 @@ def on_window(ipc, event):
     with _lock:
         if _arranging > 0:
             return
+
+    # Transient surfaces (Edge tooltips) must not schedule an arrangement at
+    # all — they vanish within ~20ms, long before the debounce timer fires.
+    if is_transient(event.container):
+        return
 
     con_id = event.container.id
 
